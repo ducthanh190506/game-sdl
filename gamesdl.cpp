@@ -108,9 +108,9 @@ struct Shield {
 
     Shield(int x, int y, bool horizontal) {
         if (horizontal)
-            rect = {x - 50, y - 10, 20, 100};
+            rect = {x - 50, y - 10, 100, 20}; // Khiên ngang
         else
-            rect = {x - 10, y - 50, 100, 20};
+            rect = {x - 10, y - 50, 20, 100}; // Khiên dọc
         spawnTime = SDL_GetTicks();
     }
 
@@ -190,7 +190,6 @@ int main(int argc, char* argv[]) {
     bulletTextures[5] = IMG_LoadTexture(renderer, "bullet3.png");
 
     Mix_Music* bgMusic = Mix_LoadMUS("background.wav");
-    Mix_Chunk* bulletSound = Mix_LoadWAV("bullet.wav");
     Mix_Chunk* explosionSound = Mix_LoadWAV("explosion.wav");
     Mix_Chunk* buttonClickSound = Mix_LoadWAV("click.wav");  // Tạo sound click (nếu có)
 
@@ -218,13 +217,15 @@ int main(int argc, char* argv[]) {
     Uint32 lastSpawn = 0, spawnDelay = 500;
     Uint32 startTime = 0;
     Uint32 wallCooldown = 10000, lastWall = 0;
+    bool firstShieldUsed = false; // Biến để theo dõi lần sử dụng đầu tiên
+    int remainingCooldown = 0; // Biến để hiển thị thời gian hồi chiêu còn lại
 
     // Biến để theo dõi loại đạn tiếp theo sẽ được bắn
     int nextBulletTypeToSpawn = 0; // 0: bullet1, 1: bullet2, 2: bullet3
 
-    // Lưu vị trí click chuột cuối cùng để xác định hướng lá chắn
-    int lastClickX = SCREEN_WIDTH / 2;
-    int lastClickY = SCREEN_HEIGHT / 2;
+    // Biến để lưu vị trí chuột hiện tại
+    int currentMouseX = SCREEN_WIDTH / 2;
+    int currentMouseY = SCREEN_HEIGHT / 2;
 
     SDL_Event e;
     bool quit = false;
@@ -234,6 +235,10 @@ int main(int argc, char* argv[]) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 quit = true;
+            }
+            else if (e.type == SDL_MOUSEMOTION) {
+                // Cập nhật vị trí chuột hiện tại
+                SDL_GetMouseState(&currentMouseX, &currentMouseY);
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 int mouseX, mouseY;
@@ -256,12 +261,13 @@ int main(int argc, char* argv[]) {
                                 player.tex = playerTexRight;
                                 survivalTime = 0;
                                 lastWall = 0;
+                                firstShieldUsed = false;  // Reset biến khi bắt đầu game mới
                                 startTime = SDL_GetTicks();
                                 nextBulletTypeToSpawn = 0;
                                 targetX = player.rect.x;
                                 targetY = player.rect.y;
-                                lastClickX = targetX;
-                                lastClickY = targetY;
+                                currentMouseX = targetX;
+                                currentMouseY = targetY;
                             }
                             else if (i == 1) { // EXIT
                                 quit = true;
@@ -272,10 +278,6 @@ int main(int argc, char* argv[]) {
                 }
                 else if (gameState == PLAYING && e.button.button == SDL_BUTTON_RIGHT) {
                     SDL_GetMouseState(&targetX, &targetY);
-
-                    // Lưu vị trí click chuột cuối cùng
-                    lastClickX = targetX;
-                    lastClickY = targetY;
 
                     if (targetX > player.rect.x + player.rect.w / 2) {
                         player.tex = playerTexRight;
@@ -300,29 +302,35 @@ int main(int argc, char* argv[]) {
                         player.tex = playerTexRight;
                         survivalTime = 0;
                         lastWall = 0;
+                        firstShieldUsed = false;  // Reset biến khi bắt đầu game mới
                         startTime = SDL_GetTicks();
                         targetX = player.rect.x;
                         targetY = player.rect.y;
-                        lastClickX = targetX;
-                        lastClickY = targetY;
+                        currentMouseX = targetX;
+                        currentMouseY = targetY;
                         nextBulletTypeToSpawn = 0; // Reset loại đạn về bullet1
                     }
                     else if (gameState == PLAYING) {
-                        if (SDL_GetTicks() - lastWall > wallCooldown) {
-                            // Tính toán hướng từ người chơi đến vị trí click chuột cuối cùng
+                        // Kiểm tra lần sử dụng đầu tiên hoặc đã hết thời gian hồi chiêu
+                        if (!firstShieldUsed || SDL_GetTicks() - lastWall > wallCooldown) {
+                            // Lấy vị trí trung tâm của người chơi
                             int playerCenterX = player.rect.x + player.rect.w / 2;
                             int playerCenterY = player.rect.y + player.rect.h / 2;
 
-                            // Tính vector hướng từ người chơi đến điểm click
-                            float dx = lastClickX - playerCenterX;
-                            float dy = lastClickY - playerCenterY;
+                            // Tính hướng từ người chơi đến vị trí chuột hiện tại
+                            float dx = currentMouseX - playerCenterX;
+                            float dy = currentMouseY - playerCenterY;
 
-                            // Xác định hướng chính (ngang hay dọc)
+                            // Xác định xem khiên là ngang hay dọc dựa trên hướng chuột
+                            // Nếu góc giữa vector và trục x là nhỏ (dx lớn hơn dy theo giá trị tuyệt đối),
+                            // thì set khiên là dọc (vertical). Ngược lại, set khiên là ngang (horizontal).
                             bool isHorizontalShield = abs(dx) < abs(dy);
 
-                            // Đặt lá chắn vào vị trí của người chơi, hướng sẽ được quyết định bởi isHorizontalShield
+                            // Đặt lá chắn vào vị trí của người chơi, với hướng dựa vào vị trí chuột
                             shields.push_back(Shield(playerCenterX, playerCenterY, isHorizontalShield));
+
                             lastWall = SDL_GetTicks();
+                            firstShieldUsed = true; // Đánh dấu đã sử dụng lá chắn lần đầu
                         }
                     }
                 }
@@ -334,6 +342,15 @@ int main(int argc, char* argv[]) {
             player.moveTo(targetX, targetY);
 
             Uint32 now = SDL_GetTicks();
+
+            // Cập nhật thời gian hồi chiêu còn lại
+            if (firstShieldUsed) {
+                remainingCooldown = (wallCooldown - (now - lastWall)) / 1000;
+                if (remainingCooldown < 0) remainingCooldown = 0;
+            } else {
+                remainingCooldown = 0;
+            }
+
             if (now - lastSpawn > spawnDelay) {
                 int side = rand() % 4;
                 int x, y;
@@ -366,7 +383,6 @@ int main(int argc, char* argv[]) {
                 float len = sqrt(dx * dx + dy * dy);
                 float speed = 5 + rand() % 5;
                 bullets.emplace_back(x, y, dx / len * speed, dy / len * speed, texIndex);
-                Mix_PlayChannel(-1, bulletSound, 0);
                 lastSpawn = now;
             }
 
@@ -427,7 +443,7 @@ int main(int argc, char* argv[]) {
                       SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 180, lightBlue);
             renderText(renderer, font, "RIGHT CLICK - Move player",
                       SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 150);
-            renderText(renderer, font, "ENTER - Place shield",
+            renderText(renderer, font, "ENTER - Place shield in mouse direction",
                       SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 120);
             renderText(renderer, font, "ESC - Return to menu",
                       SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 90);
@@ -451,6 +467,16 @@ int main(int argc, char* argv[]) {
             string info = "Time: " + intToString(survivalTime) + "   High Score: " + intToString(highScore);
             renderText(renderer, font, info, 10, 10);
 
+            // Hiển thị thời gian hồi chiêu của lá chắn
+            SDL_Color cooldownColor;
+            if (remainingCooldown > 0) {
+                cooldownColor = {255, 150, 0}; // Màu cam khi đang hồi chiêu
+            } else {
+                cooldownColor = {0, 255, 0};   // Màu xanh lá khi sẵn sàng
+            }
+            string cooldownText = "Shield Cooldown: " + intToString(remainingCooldown) + "s";
+            renderText(renderer, font, cooldownText, 10, 50, cooldownColor);
+
             // Vẽ màn hình game over nếu cần
             if (gameState == GAME_OVER) {
                 SDL_Color red = {255, 0, 0};
@@ -467,7 +493,6 @@ int main(int argc, char* argv[]) {
 
     // Giải phóng bộ nhớ
     Mix_FreeMusic(bgMusic);
-    Mix_FreeChunk(bulletSound);
     Mix_FreeChunk(explosionSound);
     if (buttonClickSound) Mix_FreeChunk(buttonClickSound);
 
