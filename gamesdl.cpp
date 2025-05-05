@@ -15,11 +15,13 @@ using namespace std;
 const int SCREEN_WIDTH = 1200;
 const int SCREEN_HEIGHT = 800;
 
-// Định nghĩa các trạng thái game
 enum GameState {
-    MENU,       // Menu chính
-    PLAYING,    // Đang chơi
-    GAME_OVER   // Game over
+    MENU,
+    PLAYING,
+    GAME_OVER,
+    HOW_TO_PLAY,
+    SETTINGS,
+    HIGHSCORE
 };
 
 struct Button {
@@ -33,15 +35,12 @@ struct Button {
     }
 
     void render(SDL_Renderer* renderer, TTF_Font* font) {
-        // Vẽ nền nút
         SDL_SetRenderDrawColor(renderer, 100, 100, 100, 200);
         SDL_RenderFillRect(renderer, &rect);
 
-        // Vẽ viền nút
         SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
         SDL_RenderDrawRect(renderer, &rect);
 
-        // Vẽ text
         SDL_Color white = {255, 255, 255};
         SDL_Surface* surface = TTF_RenderText_Solid(font, text.c_str(), white);
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
@@ -108,9 +107,9 @@ struct Shield {
 
     Shield(int x, int y, bool horizontal) {
         if (horizontal)
-            rect = {x - 50, y - 10, 100, 20}; // Khiên ngang
+            rect = {x - 50, y - 10, 100, 20};
         else
-            rect = {x - 10, y - 50, 20, 100}; // Khiên dọc
+            rect = {x - 10, y - 50, 20, 100};
         spawnTime = SDL_GetTicks();
     }
 
@@ -123,6 +122,13 @@ struct Shield {
     }
 };
 
+struct ScoreEntry {
+    string name;
+    int score;
+
+    ScoreEntry(string n, int s) : name(n), score(s) {}
+};
+
 bool checkCollision(SDL_Rect a, SDL_Rect b) {
     return SDL_HasIntersection(&a, &b);
 }
@@ -131,21 +137,67 @@ string intToString(int n) {
     return to_string(n);
 }
 
-int loadHighScore() {
-    ifstream inFile("highscore.txt");
-    int score = 0;
+vector<ScoreEntry> loadHighScores() {
+    vector<ScoreEntry> scores;
+    ifstream inFile("highscores.txt");
+    string name;
+    int score;
+
     if (inFile.is_open()) {
-        inFile >> score;
+        while (inFile >> name >> score) {
+            scores.push_back(ScoreEntry(name, score));
+        }
         inFile.close();
     }
-    return score;
+
+    if (scores.empty()) {
+        scores.push_back(ScoreEntry("Player1", 0));
+        scores.push_back(ScoreEntry("Player2", 0));
+        scores.push_back(ScoreEntry("Player3", 0));
+        scores.push_back(ScoreEntry("Player4", 0));
+        scores.push_back(ScoreEntry("Player5", 0));
+    }
+
+    return scores;
 }
 
-void saveHighScore(int score) {
-    ofstream outFile("highscore.txt");
+void saveHighScores(const vector<ScoreEntry>& scores) {
+    ofstream outFile("highscores.txt");
     if (outFile.is_open()) {
-        outFile << score;
+        for (const auto& entry : scores) {
+            outFile << entry.name << " " << entry.score << endl;
+        }
         outFile.close();
+    }
+}
+
+int getHighestScore() {
+    vector<ScoreEntry> scores = loadHighScores();
+    int highest = 0;
+    for (const auto& entry : scores) {
+        highest = max(highest, entry.score);
+    }
+    return highest;
+}
+
+void updateHighScores(int newScore) {
+    vector<ScoreEntry> scores = loadHighScores();
+
+    bool updated = false;
+    for (auto& score : scores) {
+        if (newScore > score.score) {
+            score.name = "Player";
+            score.score = newScore;
+            updated = true;
+            break;
+        }
+    }
+
+    if (updated) {
+        sort(scores.begin(), scores.end(), [](const ScoreEntry& a, const ScoreEntry& b) {
+            return a.score > b.score;
+        });
+        saveHighScores(scores);
     }
 }
 
@@ -180,23 +232,41 @@ int main(int argc, char* argv[]) {
     SDL_Texture* playerTexRight = IMG_LoadTexture(renderer, "player1.png");
 
     SDL_Texture* bulletTextures[6];
-    // Load bullet type 1 textures (các ảnh xoay của nhau)
-    bulletTextures[0] = IMG_LoadTexture(renderer, "bullet1.1.png"); // Từ dưới lên
-    bulletTextures[1] = IMG_LoadTexture(renderer, "bullet1.2.png"); // Từ trái sang
-    bulletTextures[2] = IMG_LoadTexture(renderer, "bullet1.3.png"); // Từ trên xuống
-    bulletTextures[3] = IMG_LoadTexture(renderer, "bullet1.4.png"); // Từ phải sang
-    // Load bullet type 2 and 3
+    bulletTextures[0] = IMG_LoadTexture(renderer, "bullet1.1.png");
+    bulletTextures[1] = IMG_LoadTexture(renderer, "bullet1.2.png");
+    bulletTextures[2] = IMG_LoadTexture(renderer, "bullet1.3.png");
+    bulletTextures[3] = IMG_LoadTexture(renderer, "bullet1.4.png");
     bulletTextures[4] = IMG_LoadTexture(renderer, "bullet2.png");
     bulletTextures[5] = IMG_LoadTexture(renderer, "bullet3.png");
 
     Mix_Music* bgMusic = Mix_LoadMUS("background.wav");
     Mix_Chunk* explosionSound = Mix_LoadWAV("explosion.wav");
-    Mix_Chunk* buttonClickSound = Mix_LoadWAV("click.wav");  // Tạo sound click (nếu có)
+    Mix_Chunk* buttonClickSound = Mix_LoadWAV("click.wav");
 
-    // Tạo các nút cho menu
+    int musicVolume = MIX_MAX_VOLUME;
+    int soundVolume = MIX_MAX_VOLUME;
+    Mix_VolumeMusic(musicVolume);
+    Mix_Volume(-1, soundVolume);
+
+    // Modified menu buttons - smaller size and positioned lower on screen
     vector<Button> menuButtons = {
-        Button(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2, 300, 60, "PLAY GAME"),
-        Button(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 + 100, 300, 60, "EXIT")
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 300, 200, 40, "PLAY GAME"),
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 250, 200, 40, "HOW TO PLAY"),
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 200, 200, 40, "SETTINGS"),
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 150, 200, 40, "HIGHSCORE"),
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 100, 200, 40, "EXIT")
+    };
+
+    vector<Button> backButtons = {
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 100, 200, 40, "BACK TO MENU")
+    };
+
+    vector<Button> settingsButtons = {
+        Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 - 100, 60, 60, "-"),
+        Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 - 100, 60, 60, "+"),
+        Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 + 50, 60, 60, "-"),
+        Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 + 50, 60, 60, "+"),
+        Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 100, 200, 40, "BACK TO MENU")
     };
 
     Mix_PlayMusic(bgMusic, -1);
@@ -208,22 +278,17 @@ int main(int argc, char* argv[]) {
     vector<Bullet> bullets;
     vector<Shield> shields;
 
-    // Khởi tạo game state là MENU
     GameState gameState = MENU;
 
     int targetX = SCREEN_WIDTH / 2, targetY = SCREEN_HEIGHT / 2;
     int survivalTime = 0;
-    int highScore = loadHighScore();
+    int highScore = getHighestScore();
     Uint32 lastSpawn = 0, spawnDelay = 500;
     Uint32 startTime = 0;
     Uint32 wallCooldown = 10000, lastWall = 0;
-    bool firstShieldUsed = false; // Biến để theo dõi lần sử dụng đầu tiên
-    int remainingCooldown = 0; // Biến để hiển thị thời gian hồi chiêu còn lại
-
-    // Biến để theo dõi loại đạn tiếp theo sẽ được bắn
-    int nextBulletTypeToSpawn = 0; // 0: bullet1, 1: bullet2, 2: bullet3
-
-    // Biến để lưu vị trí chuột hiện tại
+    bool firstShieldUsed = false;
+    int remainingCooldown = 0;
+    int nextBulletTypeToSpawn = 0;
     int currentMouseX = SCREEN_WIDTH / 2;
     int currentMouseY = SCREEN_HEIGHT / 2;
 
@@ -231,13 +296,11 @@ int main(int argc, char* argv[]) {
     bool quit = false;
 
     while (!quit) {
-        // Xử lý các sự kiện
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 quit = true;
             }
             else if (e.type == SDL_MOUSEMOTION) {
-                // Cập nhật vị trí chuột hiện tại
                 SDL_GetMouseState(&currentMouseX, &currentMouseY);
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
@@ -245,7 +308,6 @@ int main(int argc, char* argv[]) {
                 SDL_GetMouseState(&mouseX, &mouseY);
 
                 if (gameState == MENU) {
-                    // Kiểm tra xem người chơi có click vào nút nào không
                     for (size_t i = 0; i < menuButtons.size(); i++) {
                         if (menuButtons[i].isMouseOver(mouseX, mouseY)) {
                             if (buttonClickSound) {
@@ -254,14 +316,13 @@ int main(int argc, char* argv[]) {
 
                             if (i == 0) { // PLAY GAME
                                 gameState = PLAYING;
-                                // Reset game khi bắt đầu chơi mới
                                 bullets.clear();
                                 shields.clear();
                                 player.rect = {SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 - 30, 60, 60};
                                 player.tex = playerTexRight;
                                 survivalTime = 0;
                                 lastWall = 0;
-                                firstShieldUsed = false;  // Reset biến khi bắt đầu game mới
+                                firstShieldUsed = false;
                                 startTime = SDL_GetTicks();
                                 nextBulletTypeToSpawn = 0;
                                 targetX = player.rect.x;
@@ -269,8 +330,60 @@ int main(int argc, char* argv[]) {
                                 currentMouseX = targetX;
                                 currentMouseY = targetY;
                             }
-                            else if (i == 1) { // EXIT
+                            else if (i == 1) { // HOW TO PLAY
+                                gameState = HOW_TO_PLAY;
+                            }
+                            else if (i == 2) { // SETTINGS
+                                gameState = SETTINGS;
+                            }
+                            else if (i == 3) { // HIGHSCORE
+                                gameState = HIGHSCORE;
+                            }
+                            else if (i == 4) { // EXIT
                                 quit = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+                else if (gameState == HOW_TO_PLAY || gameState == HIGHSCORE) {
+                    for (auto& button : backButtons) {
+                        if (button.isMouseOver(mouseX, mouseY)) {
+                            if (buttonClickSound) {
+                                Mix_PlayChannel(-1, buttonClickSound, 0);
+                            }
+                            gameState = MENU;
+                            break;
+                        }
+                    }
+                }
+                else if (gameState == SETTINGS) {
+                    for (size_t i = 0; i < settingsButtons.size(); i++) {
+                        if (settingsButtons[i].isMouseOver(mouseX, mouseY)) {
+                            if (buttonClickSound) {
+                                Mix_PlayChannel(-1, buttonClickSound, 0);
+                            }
+
+                            if (i == 0) { // Decrease music volume
+                                musicVolume = max(0, musicVolume - MIX_MAX_VOLUME / 10);
+                                Mix_VolumeMusic(musicVolume);
+                            }
+                            else if (i == 1) { // Increase music volume
+                                musicVolume = min(MIX_MAX_VOLUME, musicVolume + MIX_MAX_VOLUME / 10);
+                                Mix_VolumeMusic(musicVolume);
+                            }
+                            else if (i == 2) { // Decrease sound volume
+                                soundVolume = max(0, soundVolume - MIX_MAX_VOLUME / 10);
+                                Mix_Volume(-1, soundVolume);
+                                Mix_PlayChannel(-1, buttonClickSound, 0); // Play test sound
+                            }
+                            else if (i == 3) { // Increase sound volume
+                                soundVolume = min(MIX_MAX_VOLUME, soundVolume + MIX_MAX_VOLUME / 10);
+                                Mix_Volume(-1, soundVolume);
+                                Mix_PlayChannel(-1, buttonClickSound, 0); // Play test sound
+                            }
+                            else if (i == 4) { // BACK TO MENU
+                                gameState = MENU;
                             }
                             break;
                         }
@@ -288,8 +401,10 @@ int main(int argc, char* argv[]) {
             }
             else if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) {
-                    // Nếu đang chơi, ESC sẽ quay về menu
                     if (gameState == PLAYING || gameState == GAME_OVER) {
+                        gameState = MENU;
+                    }
+                    else if (gameState == HOW_TO_PLAY || gameState == SETTINGS || gameState == HIGHSCORE) {
                         gameState = MENU;
                     }
                 }
@@ -302,48 +417,39 @@ int main(int argc, char* argv[]) {
                         player.tex = playerTexRight;
                         survivalTime = 0;
                         lastWall = 0;
-                        firstShieldUsed = false;  // Reset biến khi bắt đầu game mới
+                        firstShieldUsed = false;
                         startTime = SDL_GetTicks();
                         targetX = player.rect.x;
                         targetY = player.rect.y;
                         currentMouseX = targetX;
                         currentMouseY = targetY;
-                        nextBulletTypeToSpawn = 0; // Reset loại đạn về bullet1
+                        nextBulletTypeToSpawn = 0;
                     }
                     else if (gameState == PLAYING) {
-                        // Kiểm tra lần sử dụng đầu tiên hoặc đã hết thời gian hồi chiêu
                         if (!firstShieldUsed || SDL_GetTicks() - lastWall > wallCooldown) {
-                            // Lấy vị trí trung tâm của người chơi
                             int playerCenterX = player.rect.x + player.rect.w / 2;
                             int playerCenterY = player.rect.y + player.rect.h / 2;
 
-                            // Tính hướng từ người chơi đến vị trí chuột hiện tại
                             float dx = currentMouseX - playerCenterX;
                             float dy = currentMouseY - playerCenterY;
 
-                            // Xác định xem khiên là ngang hay dọc dựa trên hướng chuột
-                            // Nếu góc giữa vector và trục x là nhỏ (dx lớn hơn dy theo giá trị tuyệt đối),
-                            // thì set khiên là dọc (vertical). Ngược lại, set khiên là ngang (horizontal).
                             bool isHorizontalShield = abs(dx) < abs(dy);
 
-                            // Đặt lá chắn vào vị trí của người chơi, với hướng dựa vào vị trí chuột
                             shields.push_back(Shield(playerCenterX, playerCenterY, isHorizontalShield));
 
                             lastWall = SDL_GetTicks();
-                            firstShieldUsed = true; // Đánh dấu đã sử dụng lá chắn lần đầu
+                            firstShieldUsed = true;
                         }
                     }
                 }
             }
         }
 
-        // Cập nhật game logic dựa vào trạng thái hiện tại
         if (gameState == PLAYING) {
             player.moveTo(targetX, targetY);
 
             Uint32 now = SDL_GetTicks();
 
-            // Cập nhật thời gian hồi chiêu còn lại
             if (firstShieldUsed) {
                 remainingCooldown = (wallCooldown - (now - lastWall)) / 1000;
                 if (remainingCooldown < 0) remainingCooldown = 0;
@@ -355,27 +461,25 @@ int main(int argc, char* argv[]) {
                 int side = rand() % 4;
                 int x, y;
                 switch (side) {
-                    case 0: x = rand() % SCREEN_WIDTH; y = SCREEN_HEIGHT + 20; break; // Từ dưới lên
-                    case 1: x = -20; y = rand() % SCREEN_HEIGHT; break;              // Từ trái sang
-                    case 2: x = rand() % SCREEN_WIDTH; y = -20; break;               // Từ trên xuống
-                    case 3: x = SCREEN_WIDTH + 20; y = rand() % SCREEN_HEIGHT; break; // Từ phải sang
+                    case 0: x = rand() % SCREEN_WIDTH; y = SCREEN_HEIGHT + 20; break;
+                    case 1: x = -20; y = rand() % SCREEN_HEIGHT; break;
+                    case 2: x = rand() % SCREEN_WIDTH; y = -20; break;
+                    case 3: x = SCREEN_WIDTH + 20; y = rand() % SCREEN_HEIGHT; break;
                 }
 
-                // Xác định chỉ số texture dựa trên loại đạn tiếp theo và phía spawn
                 int texIndex;
 
                 if (nextBulletTypeToSpawn == 0) {
-                    // Nếu là bullet1, chọn texture dựa vào phía spawn
-                    texIndex = side; // 0: từ dưới, 1: từ trái, 2: từ trên, 3: từ phải
-                    nextBulletTypeToSpawn = 1; // Loại đạn tiếp theo là bullet2
+                    texIndex = side;
+                    nextBulletTypeToSpawn = 1;
                 }
                 else if (nextBulletTypeToSpawn == 1) {
-                    texIndex = 4; // bullet2.png
-                    nextBulletTypeToSpawn = 2; // Loại đạn tiếp theo là bullet3
+                    texIndex = 4;
+                    nextBulletTypeToSpawn = 2;
                 }
                 else {
-                    texIndex = 5; // bullet3.png
-                    nextBulletTypeToSpawn = 0; // Quay lại loại đạn bullet1
+                    texIndex = 5;
+                    nextBulletTypeToSpawn = 0;
                 }
 
                 float dx = player.rect.x - x;
@@ -399,11 +503,11 @@ int main(int argc, char* argv[]) {
                 }
                 if (hitShield) continue;
                 if (checkCollision(b.rect, player.rect)) {
-                    Mix_PlayChannel(-1, explosionSound, 0);
+                    // Sound effect removed: Mix_PlayChannel(-1, explosionSound, 0);
                     gameState = GAME_OVER;
                     if (survivalTime > highScore) {
                         highScore = survivalTime;
-                        saveHighScore(highScore);
+                        updateHighScores(survivalTime);
                     }
                 } else {
                     remaining.push_back(b);
@@ -415,41 +519,94 @@ int main(int argc, char* argv[]) {
             survivalTime = (SDL_GetTicks() - startTime) / 1000;
         }
 
-        // Render game dựa vào trạng thái hiện tại
         SDL_RenderClear(renderer);
 
         if (gameState == MENU) {
-            // Vẽ menu
             SDL_RenderCopy(renderer, menuTex, NULL, NULL);
 
-            // Vẽ tiêu đề game
-            SDL_Color gold = {255, 215, 0};
-            renderText(renderer, fontLarge, "LOL SIMULATOR",
-                      SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 4, gold);
-
-            // Vẽ điểm cao nhất
-            string highScoreText = "HIGH SCORE: " + intToString(highScore);
-            renderText(renderer, fontMedium, highScoreText,
-                      SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 3 + 50);
-
-            // Vẽ các nút menu
             for (auto& button : menuButtons) {
                 button.render(renderer, font);
             }
+        }
+        else if (gameState == HOW_TO_PLAY) {
+            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
 
-            // Vẽ hướng dẫn
-            SDL_Color lightBlue = {173, 216, 230};
-            renderText(renderer, font, "CONTROLS:",
-                      SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 180, lightBlue);
-            renderText(renderer, font, "RIGHT CLICK - Move player",
-                      SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 150);
-            renderText(renderer, font, "ENTER - Place shield in mouse direction",
-                      SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 120);
-            renderText(renderer, font, "ESC - Return to menu",
-                      SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT - 90);
+            SDL_Color gold = {255, 215, 0};
+            renderText(renderer, fontLarge, "HOW TO PLAY",
+                      SCREEN_WIDTH / 2 - 200, 100, gold);
+
+            SDL_Color white = {255, 255, 255};
+            renderText(renderer, fontMedium, "CONTROLS:", SCREEN_WIDTH / 2 - 350, 200, white);
+            renderText(renderer, font, "RIGHT CLICK - Move player to cursor location", SCREEN_WIDTH / 2 - 350, 250);
+            renderText(renderer, font, "ENTER - Place shield in mouse direction (10 second cooldown)", SCREEN_WIDTH / 2 - 350, 300);
+            renderText(renderer, font, "ESC - Return to menu during gameplay", SCREEN_WIDTH / 2 - 350, 350);
+
+            renderText(renderer, fontMedium, "GAMEPLAY:", SCREEN_WIDTH / 2 - 350, 420, white);
+            renderText(renderer, font, "- Dodge incoming bullets from all directions", SCREEN_WIDTH / 2 - 350, 470);
+            renderText(renderer, font, "- Use shields strategically to block bullets", SCREEN_WIDTH / 2 - 350, 520);
+            renderText(renderer, font, "- Survive as long as possible to achieve high score", SCREEN_WIDTH / 2 - 350, 570);
+            renderText(renderer, font, "- Different bullet types have different movement patterns", SCREEN_WIDTH / 2 - 350, 620);
+
+            for (auto& button : backButtons) {
+                button.render(renderer, font);
+            }
+        }
+        else if (gameState == SETTINGS) {
+            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+
+            SDL_Color gold = {255, 215, 0};
+            renderText(renderer, fontLarge, "SETTINGS",
+                      SCREEN_WIDTH / 2 - 150, 100, gold);
+
+            SDL_Color white = {255, 255, 255};
+            renderText(renderer, fontMedium, "Music Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 - 100);
+
+            int musicPercentage = (musicVolume * 100) / MIX_MAX_VOLUME;
+            string musicVolumeText = intToString(musicPercentage) + "%";
+            renderText(renderer, fontMedium, musicVolumeText, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100);
+
+            renderText(renderer, fontMedium, "Sound Effects Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 + 50);
+
+            int soundPercentage = (soundVolume * 100) / MIX_MAX_VOLUME;
+            string soundVolumeText = intToString(soundPercentage) + "%";
+            renderText(renderer, fontMedium, soundVolumeText, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
+
+            for (auto& button : settingsButtons) {
+                button.render(renderer, font);
+            }
+        }
+        else if (gameState == HIGHSCORE) {
+            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+
+            SDL_Color gold = {255, 215, 0};
+            renderText(renderer, fontLarge, "HIGH SCORES",
+                      SCREEN_WIDTH / 2 - 200, 100, gold);
+
+            vector<ScoreEntry> scores = loadHighScores();
+            SDL_Color white = {255, 255, 255};
+            SDL_Color silver = {192, 192, 192};
+            SDL_Color bronze = {205, 127, 50};
+
+            renderText(renderer, fontMedium, "RANK", SCREEN_WIDTH / 2 - 350, 200, white);
+            renderText(renderer, fontMedium, "NAME", SCREEN_WIDTH / 2 - 150, 200, white);
+            renderText(renderer, fontMedium, "SCORE", SCREEN_WIDTH / 2 + 150, 200, white);
+
+            for (size_t i = 0; i < min(scores.size(), (size_t)10); i++) {
+                SDL_Color rankColor = white;
+                if (i == 0) rankColor = gold;
+                else if (i == 1) rankColor = silver;
+                else if (i == 2) rankColor = bronze;
+
+                renderText(renderer, font, "#" + intToString(i + 1), SCREEN_WIDTH / 2 - 350, 270 + i * 50, rankColor);
+                renderText(renderer, font, scores[i].name, SCREEN_WIDTH / 2 - 150, 270 + i * 50, rankColor);
+                renderText(renderer, font, intToString(scores[i].score), SCREEN_WIDTH / 2 + 150, 270 + i * 50, rankColor);
+            }
+
+            for (auto& button : backButtons) {
+                button.render(renderer, font);
+            }
         }
         else {
-            // Vẽ background và game objects
             SDL_RenderCopy(renderer, bgTex, NULL, NULL);
 
             for (auto& shield : shields) {
@@ -462,22 +619,19 @@ int main(int argc, char* argv[]) {
 
             player.render(renderer);
 
-            // Vẽ thông tin điểm
             SDL_Color white = {255, 255, 255};
             string info = "Time: " + intToString(survivalTime) + "   High Score: " + intToString(highScore);
             renderText(renderer, font, info, 10, 10);
 
-            // Hiển thị thời gian hồi chiêu của lá chắn
             SDL_Color cooldownColor;
             if (remainingCooldown > 0) {
-                cooldownColor = {255, 150, 0}; // Màu cam khi đang hồi chiêu
+                cooldownColor = {255, 150, 0};
             } else {
-                cooldownColor = {0, 255, 0};   // Màu xanh lá khi sẵn sàng
+                cooldownColor = {0, 255, 0};
             }
             string cooldownText = "Shield Cooldown: " + intToString(remainingCooldown) + "s";
             renderText(renderer, font, cooldownText, 10, 50, cooldownColor);
 
-            // Vẽ màn hình game over nếu cần
             if (gameState == GAME_OVER) {
                 SDL_Color red = {255, 0, 0};
                 renderText(renderer, fontLarge, "GAME OVER",
@@ -488,10 +642,9 @@ int main(int argc, char* argv[]) {
         }
 
         SDL_RenderPresent(renderer);
-        SDL_Delay(16); // ~60 FPS
+        SDL_Delay(16);
     }
 
-    // Giải phóng bộ nhớ
     Mix_FreeMusic(bgMusic);
     Mix_FreeChunk(explosionSound);
     if (buttonClickSound) Mix_FreeChunk(buttonClickSound);
