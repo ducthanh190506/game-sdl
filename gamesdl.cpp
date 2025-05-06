@@ -205,8 +205,8 @@ void renderText(SDL_Renderer* renderer, TTF_Font* font, const string& text, int 
 }
 
 void resetGame(Player& player, vector<Bullet>& bullets, vector<Shield>& shields, int& survivalTime, Uint32& lastWall,
-               bool& firstShieldUsed, Uint32& startTime, int& nextBulletTypeToSpawn, int& targetX, int& targetY,
-               int& currentMouseX, int& currentMouseY, SDL_Texture* playerTexRight) {
+                bool& firstShieldUsed, Uint32& startTime, int& nextBulletTypeToSpawn, int& targetX, int& targetY,
+                int& currentMouseX, int& currentMouseY, SDL_Texture* playerTexRight) {
     bullets.clear();
     shields.clear();
     player.rect = {SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 - 30, 60, 60};
@@ -259,8 +259,9 @@ void renderMenu(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& me
 }
 
 void renderHowToPlay(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& backButtons,
-                    TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
-    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+                     TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
 
     SDL_Color gold = {255, 215, 0};
     renderText(renderer, fontLarge, "HOW TO PLAY", SCREEN_WIDTH / 2 - 200, 100, gold);
@@ -283,31 +284,30 @@ void renderHowToPlay(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button
 }
 
 void renderSettings(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& settingsButtons,
-                   TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium, int musicVolume, int soundVolume) {
-    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
-
+                     TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium, int musicVolume, int soundVolume) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
     SDL_Color gold = {255, 215, 0};
     renderText(renderer, fontLarge, "SETTINGS", SCREEN_WIDTH / 2 - 150, 100, gold);
-
     SDL_Color white = {255, 255, 255};
-    renderText(renderer, fontMedium, "Music Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 - 100);
-
+    renderText(renderer, fontMedium, "Music Volume:", SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 - 150, white);
     int musicPercentage = (musicVolume * 100) / MIX_MAX_VOLUME;
-    renderText(renderer, fontMedium, intToString(musicPercentage) + "%", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100);
-
-    renderText(renderer, fontMedium, "Sound Effects Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 + 50);
-
-    int soundPercentage = (soundVolume * 100) / MIX_MAX_VOLUME;
-    renderText(renderer, fontMedium, intToString(soundPercentage) + "%", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
-
+    renderText(renderer, fontMedium, intToString(musicPercentage) + "%", SCREEN_WIDTH / 2 + 100, SCREEN_HEIGHT / 2 - 150);
     for (auto& button : settingsButtons) {
         button.render(renderer, font);
     }
 }
 
+vector<Button> settingsButtons = {
+    Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 - 100, 60, 60, "-10%"),
+    Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 - 100, 60, 60, "+10%"),
+    Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 100, 200, 40, "BACK TO MENU")
+};
+
 void renderHighscore(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& backButtons,
-                    TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
-    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+                     TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
 
     SDL_Color gold = {255, 215, 0};
     renderText(renderer, fontLarge, "HIGH SCORES", SCREEN_WIDTH / 2 - 200, 100, gold);
@@ -338,9 +338,9 @@ void renderHighscore(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button
 }
 
 void renderGame(SDL_Renderer* renderer, SDL_Texture* bgTex, SDL_Texture* wallTex, vector<Shield>& shields,
-               vector<Bullet>& bullets, SDL_Texture* bulletTextures[6], Player& player,
-               TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium,
-               int survivalTime, int highScore, int remainingCooldown, GameState gameState) {
+                vector<Bullet>& bullets, SDL_Texture* bulletTextures[6], Player& player,
+                TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium,
+                int survivalTime, int highScore, int remainingCooldown, GameState gameState) {
     SDL_RenderCopy(renderer, bgTex, NULL, NULL);
 
     for (auto& shield : shields) {
@@ -354,7 +354,8 @@ void renderGame(SDL_Renderer* renderer, SDL_Texture* bgTex, SDL_Texture* wallTex
     player.render(renderer);
 
     SDL_Color white = {255, 255, 255};
-    string info = "Time: " + intToString(survivalTime) + "   High Score: " + intToString(highScore);
+    string info = "Time: " + intToString(survivalTime) + "  High Score: " +
+    intToString(highScore);
     renderText(renderer, font, info, 10, 10);
 
     SDL_Color cooldownColor = (remainingCooldown > 0) ? SDL_Color{255, 150, 0} : SDL_Color{0, 255, 0};
@@ -419,10 +420,8 @@ int main(int argc, char* argv[]) {
     };
 
     vector<Button> settingsButtons = {
-        Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 - 100, 60, 60, "-"),
-        Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 - 100, 60, 60, "+"),
-        Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 + 50, 60, 60, "-"),
-        Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 + 50, 60, 60, "+"),
+        Button(SCREEN_WIDTH / 2 - 250, SCREEN_HEIGHT / 2 - 100, 60, 60, "-10%"),
+        Button(SCREEN_WIDTH / 2 + 190, SCREEN_HEIGHT / 2 - 100, 60, 60, "+10%"),
         Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 100, 200, 40, "BACK TO MENU")
     };
 
@@ -496,21 +495,13 @@ int main(int argc, char* argv[]) {
                         if (settingsButtons[i].isMouseOver(mouseX, mouseY)) {
                             if (buttonClickSound) Mix_PlayChannel(-1, buttonClickSound, 0);
 
-                            if (i == 0) {
+                            if (i == 0) { // Nút "-10%"
                                 musicVolume = max(0, musicVolume - MIX_MAX_VOLUME / 10);
                                 Mix_VolumeMusic(musicVolume);
-                            } else if (i == 1) {
+                            } else if (i == 1) { // Nút "+10%"
                                 musicVolume = min(MIX_MAX_VOLUME, musicVolume + MIX_MAX_VOLUME / 10);
                                 Mix_VolumeMusic(musicVolume);
-                            } else if (i == 2) {
-                                soundVolume = max(0, soundVolume - MIX_MAX_VOLUME / 10);
-                                Mix_Volume(-1, soundVolume);
-                                Mix_PlayChannel(-1, buttonClickSound, 0);
-                            } else if (i == 3) {
-                                soundVolume = min(MIX_MAX_VOLUME, soundVolume + MIX_MAX_VOLUME / 10);
-                                Mix_Volume(-1, soundVolume);
-                                Mix_PlayChannel(-1, buttonClickSound, 0);
-                            } else if (i == 4) {
+                            } else if (i == 2) { // Nút "BACK TO MENU"
                                 gameState = MENU;
                             }
                             break;
@@ -530,7 +521,7 @@ int main(int argc, char* argv[]) {
                     if (gameState == GAME_OVER) {
                         gameState = PLAYING;
                         resetGame(player, bullets, shields, survivalTime, lastWall, firstShieldUsed, startTime,
-                                 nextBulletTypeToSpawn, targetX, targetY, currentMouseX, currentMouseY, playerTexRight);
+                                  nextBulletTypeToSpawn, targetX, targetY, currentMouseX, currentMouseY, playerTexRight);
                     } else if (gameState == PLAYING) {
                         if (!firstShieldUsed || SDL_GetTicks() - lastWall > wallCooldown) {
                             int playerCenterX = player.rect.x + player.rect.w / 2;
@@ -610,7 +601,7 @@ int main(int argc, char* argv[]) {
             case PLAYING:
             case GAME_OVER:
                 renderGame(renderer, bgTex, wallTex, shields, bullets, bulletTextures, player, font, fontLarge, fontMedium,
-                          survivalTime, highScore, remainingCooldown, gameState);
+                           survivalTime, highScore, remainingCooldown, gameState);
                 break;
         }
 
