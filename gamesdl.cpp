@@ -16,12 +16,7 @@ const int SCREEN_WIDTH = 1200;
 const int SCREEN_HEIGHT = 800;
 
 enum GameState {
-    MENU,
-    PLAYING,
-    GAME_OVER,
-    HOW_TO_PLAY,
-    SETTINGS,
-    HIGHSCORE
+    MENU, PLAYING, GAME_OVER, HOW_TO_PLAY, SETTINGS, HIGHSCORE
 };
 
 struct Button {
@@ -182,7 +177,6 @@ int getHighestScore() {
 
 void updateHighScores(int newScore) {
     vector<ScoreEntry> scores = loadHighScores();
-
     bool updated = false;
     for (auto& score : scores) {
         if (newScore > score.score) {
@@ -208,6 +202,170 @@ void renderText(SDL_Renderer* renderer, TTF_Font* font, const string& text, int 
     SDL_RenderCopy(renderer, texture, NULL, &rect);
     SDL_FreeSurface(surface);
     SDL_DestroyTexture(texture);
+}
+
+void resetGame(Player& player, vector<Bullet>& bullets, vector<Shield>& shields, int& survivalTime, Uint32& lastWall,
+               bool& firstShieldUsed, Uint32& startTime, int& nextBulletTypeToSpawn, int& targetX, int& targetY,
+               int& currentMouseX, int& currentMouseY, SDL_Texture* playerTexRight) {
+    bullets.clear();
+    shields.clear();
+    player.rect = {SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 - 30, 60, 60};
+    player.tex = playerTexRight;
+    survivalTime = 0;
+    lastWall = 0;
+    firstShieldUsed = false;
+    startTime = SDL_GetTicks();
+    nextBulletTypeToSpawn = 0;
+    targetX = player.rect.x;
+    targetY = player.rect.y;
+    currentMouseX = targetX;
+    currentMouseY = targetY;
+}
+
+void spawnBullet(vector<Bullet>& bullets, int playerX, int playerY, int& nextBulletTypeToSpawn) {
+    int side = rand() % 4;
+    int x, y;
+    switch (side) {
+        case 0: x = rand() % SCREEN_WIDTH; y = SCREEN_HEIGHT + 20; break;
+        case 1: x = -20; y = rand() % SCREEN_HEIGHT; break;
+        case 2: x = rand() % SCREEN_WIDTH; y = -20; break;
+        case 3: x = SCREEN_WIDTH + 20; y = rand() % SCREEN_HEIGHT; break;
+    }
+
+    int texIndex;
+    if (nextBulletTypeToSpawn == 0) {
+        texIndex = side;
+        nextBulletTypeToSpawn = 1;
+    } else if (nextBulletTypeToSpawn == 1) {
+        texIndex = 4;
+        nextBulletTypeToSpawn = 2;
+    } else {
+        texIndex = 5;
+        nextBulletTypeToSpawn = 0;
+    }
+
+    float dx = playerX - x;
+    float dy = playerY - y;
+    float len = sqrt(dx * dx + dy * dy);
+    float speed = 5 + rand() % 5;
+    bullets.emplace_back(x, y, dx / len * speed, dy / len * speed, texIndex);
+}
+
+void renderMenu(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& menuButtons, TTF_Font* font) {
+    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+    for (auto& button : menuButtons) {
+        button.render(renderer, font);
+    }
+}
+
+void renderHowToPlay(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& backButtons,
+                    TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
+    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+
+    SDL_Color gold = {255, 215, 0};
+    renderText(renderer, fontLarge, "HOW TO PLAY", SCREEN_WIDTH / 2 - 200, 100, gold);
+
+    SDL_Color white = {255, 255, 255};
+    renderText(renderer, fontMedium, "CONTROLS:", SCREEN_WIDTH / 2 - 350, 200, white);
+    renderText(renderer, font, "RIGHT CLICK - Move player to cursor location", SCREEN_WIDTH / 2 - 350, 250);
+    renderText(renderer, font, "ENTER - Place shield in mouse direction (10 second cooldown)", SCREEN_WIDTH / 2 - 350, 300);
+    renderText(renderer, font, "ESC - Return to menu during gameplay", SCREEN_WIDTH / 2 - 350, 350);
+
+    renderText(renderer, fontMedium, "GAMEPLAY:", SCREEN_WIDTH / 2 - 350, 420, white);
+    renderText(renderer, font, "- Dodge incoming bullets from all directions", SCREEN_WIDTH / 2 - 350, 470);
+    renderText(renderer, font, "- Use shields strategically to block bullets", SCREEN_WIDTH / 2 - 350, 520);
+    renderText(renderer, font, "- Survive as long as possible to achieve high score", SCREEN_WIDTH / 2 - 350, 570);
+    renderText(renderer, font, "- Different bullet types have different movement patterns", SCREEN_WIDTH / 2 - 350, 620);
+
+    for (auto& button : backButtons) {
+        button.render(renderer, font);
+    }
+}
+
+void renderSettings(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& settingsButtons,
+                   TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium, int musicVolume, int soundVolume) {
+    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+
+    SDL_Color gold = {255, 215, 0};
+    renderText(renderer, fontLarge, "SETTINGS", SCREEN_WIDTH / 2 - 150, 100, gold);
+
+    SDL_Color white = {255, 255, 255};
+    renderText(renderer, fontMedium, "Music Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 - 100);
+
+    int musicPercentage = (musicVolume * 100) / MIX_MAX_VOLUME;
+    renderText(renderer, fontMedium, intToString(musicPercentage) + "%", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100);
+
+    renderText(renderer, fontMedium, "Sound Effects Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 + 50);
+
+    int soundPercentage = (soundVolume * 100) / MIX_MAX_VOLUME;
+    renderText(renderer, fontMedium, intToString(soundPercentage) + "%", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
+
+    for (auto& button : settingsButtons) {
+        button.render(renderer, font);
+    }
+}
+
+void renderHighscore(SDL_Renderer* renderer, SDL_Texture* menuTex, vector<Button>& backButtons,
+                    TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium) {
+    SDL_RenderCopy(renderer, menuTex, NULL, NULL);
+
+    SDL_Color gold = {255, 215, 0};
+    renderText(renderer, fontLarge, "HIGH SCORES", SCREEN_WIDTH / 2 - 200, 100, gold);
+
+    vector<ScoreEntry> scores = loadHighScores();
+    SDL_Color white = {255, 255, 255};
+    SDL_Color silver = {192, 192, 192};
+    SDL_Color bronze = {205, 127, 50};
+
+    renderText(renderer, fontMedium, "RANK", SCREEN_WIDTH / 2 - 350, 200, white);
+    renderText(renderer, fontMedium, "NAME", SCREEN_WIDTH / 2 - 150, 200, white);
+    renderText(renderer, fontMedium, "SCORE", SCREEN_WIDTH / 2 + 150, 200, white);
+
+    for (size_t i = 0; i < min(scores.size(), (size_t)10); i++) {
+        SDL_Color rankColor = white;
+        if (i == 0) rankColor = gold;
+        else if (i == 1) rankColor = silver;
+        else if (i == 2) rankColor = bronze;
+
+        renderText(renderer, font, "#" + intToString(i + 1), SCREEN_WIDTH / 2 - 350, 270 + i * 50, rankColor);
+        renderText(renderer, font, scores[i].name, SCREEN_WIDTH / 2 - 150, 270 + i * 50, rankColor);
+        renderText(renderer, font, intToString(scores[i].score), SCREEN_WIDTH / 2 + 150, 270 + i * 50, rankColor);
+    }
+
+    for (auto& button : backButtons) {
+        button.render(renderer, font);
+    }
+}
+
+void renderGame(SDL_Renderer* renderer, SDL_Texture* bgTex, SDL_Texture* wallTex, vector<Shield>& shields,
+               vector<Bullet>& bullets, SDL_Texture* bulletTextures[6], Player& player,
+               TTF_Font* font, TTF_Font* fontLarge, TTF_Font* fontMedium,
+               int survivalTime, int highScore, int remainingCooldown, GameState gameState) {
+    SDL_RenderCopy(renderer, bgTex, NULL, NULL);
+
+    for (auto& shield : shields) {
+        shield.render(renderer, wallTex);
+    }
+
+    for (auto& b : bullets) {
+        b.render(renderer, bulletTextures);
+    }
+
+    player.render(renderer);
+
+    SDL_Color white = {255, 255, 255};
+    string info = "Time: " + intToString(survivalTime) + "   High Score: " + intToString(highScore);
+    renderText(renderer, font, info, 10, 10);
+
+    SDL_Color cooldownColor = (remainingCooldown > 0) ? SDL_Color{255, 150, 0} : SDL_Color{0, 255, 0};
+    string cooldownText = "Shield Cooldown: " + intToString(remainingCooldown) + "s";
+    renderText(renderer, font, cooldownText, 10, 50, cooldownColor);
+
+    if (gameState == GAME_OVER) {
+        SDL_Color red = {255, 0, 0};
+        renderText(renderer, fontLarge, "GAME OVER", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 100, red);
+        renderText(renderer, fontMedium, "ENTER to restart - ESC for menu", SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 2);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -248,7 +406,6 @@ int main(int argc, char* argv[]) {
     Mix_VolumeMusic(musicVolume);
     Mix_Volume(-1, soundVolume);
 
-    // Modified menu buttons - smaller size and positioned lower on screen
     vector<Button> menuButtons = {
         Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 300, 200, 40, "PLAY GAME"),
         Button(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT - 250, 200, 40, "HOW TO PLAY"),
@@ -299,144 +456,91 @@ int main(int argc, char* argv[]) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 quit = true;
-            }
-            else if (e.type == SDL_MOUSEMOTION) {
+            } else if (e.type == SDL_MOUSEMOTION) {
                 SDL_GetMouseState(&currentMouseX, &currentMouseY);
-            }
-            else if (e.type == SDL_MOUSEBUTTONDOWN) {
+            } else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 int mouseX, mouseY;
                 SDL_GetMouseState(&mouseX, &mouseY);
 
                 if (gameState == MENU) {
                     for (size_t i = 0; i < menuButtons.size(); i++) {
                         if (menuButtons[i].isMouseOver(mouseX, mouseY)) {
-                            if (buttonClickSound) {
-                                Mix_PlayChannel(-1, buttonClickSound, 0);
-                            }
+                            if (buttonClickSound) Mix_PlayChannel(-1, buttonClickSound, 0);
 
-                            if (i == 0) { // PLAY GAME
+                            if (i == 0) {
                                 gameState = PLAYING;
-                                bullets.clear();
-                                shields.clear();
-                                player.rect = {SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 - 30, 60, 60};
-                                player.tex = playerTexRight;
-                                survivalTime = 0;
-                                lastWall = 0;
-                                firstShieldUsed = false;
-                                startTime = SDL_GetTicks();
-                                nextBulletTypeToSpawn = 0;
-                                targetX = player.rect.x;
-                                targetY = player.rect.y;
-                                currentMouseX = targetX;
-                                currentMouseY = targetY;
-                            }
-                            else if (i == 1) { // HOW TO PLAY
+                                resetGame(player, bullets, shields, survivalTime, lastWall, firstShieldUsed, startTime,
+                                          nextBulletTypeToSpawn, targetX, targetY, currentMouseX, currentMouseY, playerTexRight);
+                            } else if (i == 1) {
                                 gameState = HOW_TO_PLAY;
-                            }
-                            else if (i == 2) { // SETTINGS
+                            } else if (i == 2) {
                                 gameState = SETTINGS;
-                            }
-                            else if (i == 3) { // HIGHSCORE
+                            } else if (i == 3) {
                                 gameState = HIGHSCORE;
-                            }
-                            else if (i == 4) { // EXIT
+                            } else if (i == 4) {
                                 quit = true;
                             }
                             break;
                         }
                     }
-                }
-                else if (gameState == HOW_TO_PLAY || gameState == HIGHSCORE) {
+                } else if (gameState == HOW_TO_PLAY || gameState == HIGHSCORE) {
                     for (auto& button : backButtons) {
                         if (button.isMouseOver(mouseX, mouseY)) {
-                            if (buttonClickSound) {
-                                Mix_PlayChannel(-1, buttonClickSound, 0);
-                            }
+                            if (buttonClickSound) Mix_PlayChannel(-1, buttonClickSound, 0);
                             gameState = MENU;
                             break;
                         }
                     }
-                }
-                else if (gameState == SETTINGS) {
+                } else if (gameState == SETTINGS) {
                     for (size_t i = 0; i < settingsButtons.size(); i++) {
                         if (settingsButtons[i].isMouseOver(mouseX, mouseY)) {
-                            if (buttonClickSound) {
-                                Mix_PlayChannel(-1, buttonClickSound, 0);
-                            }
+                            if (buttonClickSound) Mix_PlayChannel(-1, buttonClickSound, 0);
 
-                            if (i == 0) { // Decrease music volume
+                            if (i == 0) {
                                 musicVolume = max(0, musicVolume - MIX_MAX_VOLUME / 10);
                                 Mix_VolumeMusic(musicVolume);
-                            }
-                            else if (i == 1) { // Increase music volume
+                            } else if (i == 1) {
                                 musicVolume = min(MIX_MAX_VOLUME, musicVolume + MIX_MAX_VOLUME / 10);
                                 Mix_VolumeMusic(musicVolume);
-                            }
-                            else if (i == 2) { // Decrease sound volume
+                            } else if (i == 2) {
                                 soundVolume = max(0, soundVolume - MIX_MAX_VOLUME / 10);
                                 Mix_Volume(-1, soundVolume);
-                                Mix_PlayChannel(-1, buttonClickSound, 0); // Play test sound
-                            }
-                            else if (i == 3) { // Increase sound volume
+                                Mix_PlayChannel(-1, buttonClickSound, 0);
+                            } else if (i == 3) {
                                 soundVolume = min(MIX_MAX_VOLUME, soundVolume + MIX_MAX_VOLUME / 10);
                                 Mix_Volume(-1, soundVolume);
-                                Mix_PlayChannel(-1, buttonClickSound, 0); // Play test sound
-                            }
-                            else if (i == 4) { // BACK TO MENU
+                                Mix_PlayChannel(-1, buttonClickSound, 0);
+                            } else if (i == 4) {
                                 gameState = MENU;
                             }
                             break;
                         }
                     }
-                }
-                else if (gameState == PLAYING && e.button.button == SDL_BUTTON_RIGHT) {
+                } else if (gameState == PLAYING && e.button.button == SDL_BUTTON_RIGHT) {
                     SDL_GetMouseState(&targetX, &targetY);
-
-                    if (targetX > player.rect.x + player.rect.w / 2) {
-                        player.tex = playerTexRight;
-                    } else {
-                        player.tex = playerTexLeft;
-                    }
+                    player.tex = (targetX > player.rect.x + player.rect.w / 2) ? playerTexRight : playerTexLeft;
                 }
-            }
-            else if (e.type == SDL_KEYDOWN) {
+            } else if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) {
-                    if (gameState == PLAYING || gameState == GAME_OVER) {
+                    if (gameState == PLAYING || gameState == GAME_OVER ||
+                        gameState == HOW_TO_PLAY || gameState == SETTINGS || gameState == HIGHSCORE) {
                         gameState = MENU;
                     }
-                    else if (gameState == HOW_TO_PLAY || gameState == SETTINGS || gameState == HIGHSCORE) {
-                        gameState = MENU;
-                    }
-                }
-                else if (e.key.keysym.sym == SDLK_RETURN) {
+                } else if (e.key.keysym.sym == SDLK_RETURN) {
                     if (gameState == GAME_OVER) {
                         gameState = PLAYING;
-                        bullets.clear();
-                        shields.clear();
-                        player.rect = {SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 - 30, 60, 60};
-                        player.tex = playerTexRight;
-                        survivalTime = 0;
-                        lastWall = 0;
-                        firstShieldUsed = false;
-                        startTime = SDL_GetTicks();
-                        targetX = player.rect.x;
-                        targetY = player.rect.y;
-                        currentMouseX = targetX;
-                        currentMouseY = targetY;
-                        nextBulletTypeToSpawn = 0;
-                    }
-                    else if (gameState == PLAYING) {
+                        resetGame(player, bullets, shields, survivalTime, lastWall, firstShieldUsed, startTime,
+                                 nextBulletTypeToSpawn, targetX, targetY, currentMouseX, currentMouseY, playerTexRight);
+                    } else if (gameState == PLAYING) {
                         if (!firstShieldUsed || SDL_GetTicks() - lastWall > wallCooldown) {
                             int playerCenterX = player.rect.x + player.rect.w / 2;
                             int playerCenterY = player.rect.y + player.rect.h / 2;
 
                             float dx = currentMouseX - playerCenterX;
                             float dy = currentMouseY - playerCenterY;
-
                             bool isHorizontalShield = abs(dx) < abs(dy);
 
                             shields.push_back(Shield(playerCenterX, playerCenterY, isHorizontalShield));
-
                             lastWall = SDL_GetTicks();
                             firstShieldUsed = true;
                         }
@@ -447,7 +551,6 @@ int main(int argc, char* argv[]) {
 
         if (gameState == PLAYING) {
             player.moveTo(targetX, targetY);
-
             Uint32 now = SDL_GetTicks();
 
             if (firstShieldUsed) {
@@ -458,35 +561,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (now - lastSpawn > spawnDelay) {
-                int side = rand() % 4;
-                int x, y;
-                switch (side) {
-                    case 0: x = rand() % SCREEN_WIDTH; y = SCREEN_HEIGHT + 20; break;
-                    case 1: x = -20; y = rand() % SCREEN_HEIGHT; break;
-                    case 2: x = rand() % SCREEN_WIDTH; y = -20; break;
-                    case 3: x = SCREEN_WIDTH + 20; y = rand() % SCREEN_HEIGHT; break;
-                }
-
-                int texIndex;
-
-                if (nextBulletTypeToSpawn == 0) {
-                    texIndex = side;
-                    nextBulletTypeToSpawn = 1;
-                }
-                else if (nextBulletTypeToSpawn == 1) {
-                    texIndex = 4;
-                    nextBulletTypeToSpawn = 2;
-                }
-                else {
-                    texIndex = 5;
-                    nextBulletTypeToSpawn = 0;
-                }
-
-                float dx = player.rect.x - x;
-                float dy = player.rect.y - y;
-                float len = sqrt(dx * dx + dy * dy);
-                float speed = 5 + rand() % 5;
-                bullets.emplace_back(x, y, dx / len * speed, dy / len * speed, texIndex);
+                spawnBullet(bullets, player.rect.x, player.rect.y, nextBulletTypeToSpawn);
                 lastSpawn = now;
             }
 
@@ -503,7 +578,6 @@ int main(int argc, char* argv[]) {
                 }
                 if (hitShield) continue;
                 if (checkCollision(b.rect, player.rect)) {
-                    // Sound effect removed: Mix_PlayChannel(-1, explosionSound, 0);
                     gameState = GAME_OVER;
                     if (survivalTime > highScore) {
                         highScore = survivalTime;
@@ -514,131 +588,30 @@ int main(int argc, char* argv[]) {
                 }
             }
             bullets = remaining;
-            shields.erase(remove_if(shields.begin(), shields.end(),
-                          [](Shield& s) { return s.isExpired(); }), shields.end());
+            shields.erase(remove_if(shields.begin(), shields.end(), [](Shield& s) { return s.isExpired(); }), shields.end());
             survivalTime = (SDL_GetTicks() - startTime) / 1000;
         }
 
         SDL_RenderClear(renderer);
 
-        if (gameState == MENU) {
-            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
-
-            for (auto& button : menuButtons) {
-                button.render(renderer, font);
-            }
-        }
-        else if (gameState == HOW_TO_PLAY) {
-            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
-
-            SDL_Color gold = {255, 215, 0};
-            renderText(renderer, fontLarge, "HOW TO PLAY",
-                      SCREEN_WIDTH / 2 - 200, 100, gold);
-
-            SDL_Color white = {255, 255, 255};
-            renderText(renderer, fontMedium, "CONTROLS:", SCREEN_WIDTH / 2 - 350, 200, white);
-            renderText(renderer, font, "RIGHT CLICK - Move player to cursor location", SCREEN_WIDTH / 2 - 350, 250);
-            renderText(renderer, font, "ENTER - Place shield in mouse direction (10 second cooldown)", SCREEN_WIDTH / 2 - 350, 300);
-            renderText(renderer, font, "ESC - Return to menu during gameplay", SCREEN_WIDTH / 2 - 350, 350);
-
-            renderText(renderer, fontMedium, "GAMEPLAY:", SCREEN_WIDTH / 2 - 350, 420, white);
-            renderText(renderer, font, "- Dodge incoming bullets from all directions", SCREEN_WIDTH / 2 - 350, 470);
-            renderText(renderer, font, "- Use shields strategically to block bullets", SCREEN_WIDTH / 2 - 350, 520);
-            renderText(renderer, font, "- Survive as long as possible to achieve high score", SCREEN_WIDTH / 2 - 350, 570);
-            renderText(renderer, font, "- Different bullet types have different movement patterns", SCREEN_WIDTH / 2 - 350, 620);
-
-            for (auto& button : backButtons) {
-                button.render(renderer, font);
-            }
-        }
-        else if (gameState == SETTINGS) {
-            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
-
-            SDL_Color gold = {255, 215, 0};
-            renderText(renderer, fontLarge, "SETTINGS",
-                      SCREEN_WIDTH / 2 - 150, 100, gold);
-
-            SDL_Color white = {255, 255, 255};
-            renderText(renderer, fontMedium, "Music Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 - 100);
-
-            int musicPercentage = (musicVolume * 100) / MIX_MAX_VOLUME;
-            string musicVolumeText = intToString(musicPercentage) + "%";
-            renderText(renderer, fontMedium, musicVolumeText, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100);
-
-            renderText(renderer, fontMedium, "Sound Effects Volume:", SCREEN_WIDTH / 2 - 350, SCREEN_HEIGHT / 2 + 50);
-
-            int soundPercentage = (soundVolume * 100) / MIX_MAX_VOLUME;
-            string soundVolumeText = intToString(soundPercentage) + "%";
-            renderText(renderer, fontMedium, soundVolumeText, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
-
-            for (auto& button : settingsButtons) {
-                button.render(renderer, font);
-            }
-        }
-        else if (gameState == HIGHSCORE) {
-            SDL_RenderCopy(renderer, menuTex, NULL, NULL);
-
-            SDL_Color gold = {255, 215, 0};
-            renderText(renderer, fontLarge, "HIGH SCORES",
-                      SCREEN_WIDTH / 2 - 200, 100, gold);
-
-            vector<ScoreEntry> scores = loadHighScores();
-            SDL_Color white = {255, 255, 255};
-            SDL_Color silver = {192, 192, 192};
-            SDL_Color bronze = {205, 127, 50};
-
-            renderText(renderer, fontMedium, "RANK", SCREEN_WIDTH / 2 - 350, 200, white);
-            renderText(renderer, fontMedium, "NAME", SCREEN_WIDTH / 2 - 150, 200, white);
-            renderText(renderer, fontMedium, "SCORE", SCREEN_WIDTH / 2 + 150, 200, white);
-
-            for (size_t i = 0; i < min(scores.size(), (size_t)10); i++) {
-                SDL_Color rankColor = white;
-                if (i == 0) rankColor = gold;
-                else if (i == 1) rankColor = silver;
-                else if (i == 2) rankColor = bronze;
-
-                renderText(renderer, font, "#" + intToString(i + 1), SCREEN_WIDTH / 2 - 350, 270 + i * 50, rankColor);
-                renderText(renderer, font, scores[i].name, SCREEN_WIDTH / 2 - 150, 270 + i * 50, rankColor);
-                renderText(renderer, font, intToString(scores[i].score), SCREEN_WIDTH / 2 + 150, 270 + i * 50, rankColor);
-            }
-
-            for (auto& button : backButtons) {
-                button.render(renderer, font);
-            }
-        }
-        else {
-            SDL_RenderCopy(renderer, bgTex, NULL, NULL);
-
-            for (auto& shield : shields) {
-                shield.render(renderer, wallTex);
-            }
-
-            for (auto& b : bullets) {
-                b.render(renderer, bulletTextures);
-            }
-
-            player.render(renderer);
-
-            SDL_Color white = {255, 255, 255};
-            string info = "Time: " + intToString(survivalTime) + "   High Score: " + intToString(highScore);
-            renderText(renderer, font, info, 10, 10);
-
-            SDL_Color cooldownColor;
-            if (remainingCooldown > 0) {
-                cooldownColor = {255, 150, 0};
-            } else {
-                cooldownColor = {0, 255, 0};
-            }
-            string cooldownText = "Shield Cooldown: " + intToString(remainingCooldown) + "s";
-            renderText(renderer, font, cooldownText, 10, 50, cooldownColor);
-
-            if (gameState == GAME_OVER) {
-                SDL_Color red = {255, 0, 0};
-                renderText(renderer, fontLarge, "GAME OVER",
-                          SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 100, red);
-                renderText(renderer, fontMedium, "ENTER to restart - ESC for menu",
-                          SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 2);
-            }
+        switch (gameState) {
+            case MENU:
+                renderMenu(renderer, menuTex, menuButtons, font);
+                break;
+            case HOW_TO_PLAY:
+                renderHowToPlay(renderer, menuTex, backButtons, font, fontLarge, fontMedium);
+                break;
+            case SETTINGS:
+                renderSettings(renderer, menuTex, settingsButtons, font, fontLarge, fontMedium, musicVolume, soundVolume);
+                break;
+            case HIGHSCORE:
+                renderHighscore(renderer, menuTex, backButtons, font, fontLarge, fontMedium);
+                break;
+            case PLAYING:
+            case GAME_OVER:
+                renderGame(renderer, bgTex, wallTex, shields, bullets, bulletTextures, player, font, fontLarge, fontMedium,
+                          survivalTime, highScore, remainingCooldown, gameState);
+                break;
         }
 
         SDL_RenderPresent(renderer);
